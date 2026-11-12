@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5f3b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<title>Cierre de Caja Senderos</title>
+<style>
+:root{--bg:#f4f6f4;--card:#fff;--ink:#1c2a22;--mut:#5d6b63;--line:#d9e0db;--pri:#1f5f3b;--pri-ink:#fff;--warn:#b3261e;--ok:#1f5f3b;--soft:#e7f0ea}
+@media (prefers-color-scheme:dark){:root{--bg:#131a16;--card:#1c2620;--ink:#e8efe9;--mut:#9fb0a5;--line:#2d3b33;--pri:#3b9a63;--pri-ink:#07140c;--warn:#ff8a80;--ok:#7fd6a0;--soft:#24332a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif;padding-bottom:84px}
+header{background:var(--pri);color:var(--pri-ink);padding:12px 16px;position:sticky;top:0;z-index:5}
+header h1{margin:0;font-size:18px}header small{opacity:.85}
+main{padding:12px 16px;max-width:640px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px}
+.card h2{margin:0 0 8px;font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+.row{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .n{flex:1;min-width:0}.row .n b{display:block}.row .n small{color:var(--mut)}
+.sub{min-width:84px;text-align:right;font-variant-numeric:tabular-nums}
+.step{display:flex;align-items:center;gap:4px}
+.step button{width:44px;height:44px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:22px}
+.step input{width:60px;height:44px;text-align:center;font-size:18px}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px}
+input[type=number]{width:100%}
+.btn{display:block;width:100%;padding:14px;border-radius:12px;border:0;background:var(--pri);color:var(--pri-ink);font-size:17px;font-weight:600;margin:8px 0}
+.btn.sec{background:var(--soft);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:var(--warn);color:#fff}
+.tot{display:flex;justify-content:space-between;padding:6px 0;font-variant-numeric:tabular-nums}
+.tot.big{font-size:20px;font-weight:700;border-top:2px solid var(--line);margin-top:6px;padding-top:10px}
+.warn{color:var(--warn)}.ok{color:var(--ok)}.mut{color:var(--mut)}
+.pill{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--soft);font-size:12px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;padding:12px 2px;border:0;background:none;color:var(--mut);font-size:12px}
+nav button.on{color:var(--pri);font-weight:700}
+nav button span{display:block;font-size:20px}
+#toast{position:fixed;left:16px;right:16px;bottom:96px;background:#222;color:#fff;padding:12px;border-radius:10px;display:none;z-index:9;text-align:center}
+label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+</style>
+</head>
+<body>
+<header><h1>Cierre de Caja · Senderos de Colón</h1><small id="hsub"></small></header>
+<main id="app"></main>
+<nav id="nav"></nav>
+<div id="toast"></div>
+<script>
+'use strict';
+var KEY = 'senderos_cierre_v1';
+var S = load();
+var view = 'hoy';
+var fechaVista = hoy();
+var adminUntil = 0;
+var memStore = null;
+
+/* ---------- datos iniciales (se cambian por CSV desde Admin) ---------- */
+function seed() {
+  return {
+    v: 1,
+    config: { pin: '', siguiente: 1 },
+    catalogo: {
+      productos: [
+        { codigo: 'POWERADE591', nombre: 'Powerade 591 ml', precio: 1500, costo: 0, unidad_compra: 'Caja', unidades_empaque: 12, existencia_inicial: 43, minimo: 12, activo: 1 },
+        { codigo: 'POWERADE600', nombre: 'Powerade 600 ml', precio: 1500, costo: 0, unidad_compra: 'Caja', unidades_empaque: 12, existencia_inicial: 27, minimo: 12, activo: 1 },
+        { codigo: 'AGUA', nombre: 'Agua Alpina 600 ml', precio: 1000, costo: 0, unidad_compra: 'Caja', unidades_empaque: 24, existencia_inicial: 24, minimo: 12, activo: 1 },
+        { codigo: 'COCA355', nombre: 'Coca Cola 355 ml', precio: 1000, costo: 0, unidad_compra: 'Caja', unidades_empaque: 12, existencia_inicial: 0, minimo: 12, activo: 1 },
+        { codigo: 'COCAMINI', nombre: 'Coca Cola Mini (vidrio)', precio: 500, costo: 0, unidad_compra: 'Caja', unidades_empaque: 1, existencia_inicial: 0, minimo: 0, activo: 1 },
+        { codigo: 'BARRITA', nombre: 'Barrita de proteína', precio: 1000, costo: 0, unidad_compra: 'Caja', unidades_empaque: 26, existencia_inicial: 78, minimo: 5, activo: 1 }
+      ],
+      ingresos: [
+        { codigo: 'TR', nombre: 'Trail Running', precio: 3500, activo: 1 },
+        { codigo: 'MTB', nombre: 'Mountain Bike', precio: 5000, activo: 1 },
+        { codigo: 'MEMB', nombre: 'Membresías', precio: 40000, activo: 1 }
+      ],
+      egresos: [
+        { codigo: 'FRUTA', nombre: 'Fruta', activo: 1 },
+        { codigo: 'VIATICOS', nombre: 'Viáticos', activo: 1 },
+        { codigo: 'JORNALES', nombre: 'Jornales', activo: 1 },
+        { codigo: 'AGUINALDO', nombre: 'Aguinaldo', activo: 1 },
+        { codigo: 'OTROS', nombre: 'Otros', activo: 1 }
+      ]
+    },
+    llegadas: [], ajustes: [], dias: {}, ultimoCajero: ''
+  };
+}
+function load() {
+  try { var j = localStorage.getItem(KEY); if (j) return JSON.parse(j); } catch (e) {}
+  return seed();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); memStore = null; }
+  catch (e) { memStore = true; toast('⚠ No se pudo guardar en el teléfono. Exportá el CSV ya.'); }
+}
+
+/* ---------- utilidades ---------- */
+function hoy() { var d = new Date(); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+function p2(n) { return String(n).padStart(2, '0'); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function fmt(n) { return '₡' + Math.round(n || 0).toLocaleString('es-CR'); }
+function num(v) { var n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? 0 : n; }
+function toast(m) { var t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(function () { t.style.display = 'none'; }, 3500); }
+function byCod(list, cod) { for (var i = 0; i < list.length; i++) if (list[i].codigo === cod) return list[i]; return null; }
+function fechaBonita(f) { var a = f.split('-'); return a[2] + '/' + a[1] + '/' + a[0]; }
+
+function emptyDay(f) { return { fecha: f, numero: null, cajero: S.ultimoCajero || '', cerrado: false, ingresos: {}, ventas: {}, consumo: {}, egresos: {}, extras: [], snap: null }; }
+function getDay(f) { return S.dias[f] || emptyDay(f); }
+function ensureDay(f) { if (!S.dias[f]) S.dias[f] = emptyDay(f); if (!S.dias[f].extras) S.dias[f].extras = []; return S.dias[f]; }
+
+function prices(d) {
+  if (d.cerrado && d.snap) return d.snap;
+  var s = { ingresos: {}, productos: {} };
+  S.catalogo.ingresos.forEach(function (i) { s.ingresos[i.codigo] = { nombre: i.nombre, precio: i.precio }; });
+  S.catalogo.productos.forEach(function (i) { s.productos[i.codigo] = { nombre: i.nombre, precio: i.precio }; });
+  S.catalogo.egresos.forEach(function (i) { s.egresos = s.egresos || {}; s.egresos[i.codigo] = { nombre: i.nombre }; });
+  return s;
+}
+function totals(d) {
+  var P = prices(d), t = { ing: 0, ven: 0, egr: 0 };
+  Object.keys(d.ingresos).forEach(function (c) { if (P.ingresos[c]) t.ing += d.ingresos[c] * P.ingresos[c].precio; });
+  Object.keys(d.ventas).forEach(function (c) { if (P.productos[c]) t.ven += d.ventas[c] * P.productos[c].precio; });
+  Object.keys(d.egresos).forEach(function (c) { t.egr += num(d.egresos[c]); });
+  (d.extras || []).forEach(function (x) { var m = x.cantidad * x.precio; if (x.tipo === 'ingreso') t.ing += m; else t.ven += m; });
+  t.totalIng = t.ing + t.ven;
+  t.general = t.totalIng - t.egr;
+  return t;
+}
+function stock(cod) {
+  var p = byCod(S.catalogo.productos, cod); if (!p) return 0;
+  var s = num(p.existencia_inicial);
+  S.llegadas.forEach(function (l) { if (l.codigo === cod) s += l.unidades; });
+  S.ajustes.forEach(function (a) { if (a.codigo === cod) s += a.delta; });
+  Object.keys(S.dias).forEach(function (f) {
+    var d = S.dias[f]; s -= (d.ventas[cod] || 0) + (d.consumo[cod] || 0);
+    (d.extras || []).forEach(function (x) { if (x.tipo === 'venta' && x.codigo === cod) s -= x.cantidad; });
+  });
+  return s;
+}
+
+/* ---------- vistas ---------- */
+var TABS = [['hoy', '🧾', 'Hoy'], ['llegadas', '📦', 'Llegadas'], ['stock', '📊', 'Existencias'], ['export', '📤', 'Exportar'], ['admin', '🔒', 'Admin']];
+function render() {
+  var y = window.scrollY;
+  document.getElementById('nav').innerHTML = TABS.map(function (t) {
+    return '<button data-act="tab" data-v="' + t[0] + '" class="' + (view === t[0] ? 'on' : '') + '"><span>' + t[1] + '</span>' + t[2] + '</button>';
+  }).join('');
+  document.getElementById('hsub').textContent = (view === 'hoy' ? fechaBonita(fechaVista) + ' · ' : '') + (navigator.onLine ? 'Funciona sin internet' : 'Sin conexión: todo se guarda en el teléfono');
+  var h = { hoy: vHoy, llegadas: vLlegadas, stock: vStock, export: vExport, admin: vAdmin }[view]();
+  document.getElementById('app').innerHTML = h;
+  window.scrollTo(0, y);
+}
+function stepper(sec, cod, val, dis) {
+  return '<div class="step"><button data-act="step" data-sec="' + sec + '" data-cod="' + esc(cod) + '" data-d="-1"' + (dis ? ' disabled' : '') + '>−</button>' +
+    '<input type="number" inputmode="numeric" min="0" value="' + (val || 0) + '" data-f="' + sec + '" data-cod="' + esc(cod) + '"' + (dis ? ' disabled' : '') + '>' +
+    '<button data-act="step" data-sec="' + sec + '" data-cod="' + esc(cod) + '" data-d="1"' + (dis ? ' disabled' : '') + '>+</button></div>';
+}
+function vHoy() {
+  var d = getDay(fechaVista), P = prices(d), lock = d.cerrado, t = totals(d), h = '';
+  h += '<div class="card"><div class="grid2"><div><label>Fecha</label><input type="date" data-f="fecha" value="' + fechaVista + '"></div>' +
+    '<div><label>Cajero(a)</label><input type="text" data-f="cajero" value="' + esc(d.cajero) + '"' + (lock ? ' disabled' : '') + '></div></div>' +
+    (lock ? '<p class="ok"><b>Día cerrado</b> · Cierre N° ' + d.numero + '</p>' : '<p class="mut">Día abierto. Tocá + / − o escribí la cantidad.</p>') + '</div>';
+  h += '<div class="card"><h2>Ingresos</h2>';
+  S.catalogo.ingresos.filter(function (i) { return i.activo != 0 || d.ingresos[i.codigo]; }).forEach(function (i) {
+    var pr = P.ingresos[i.codigo] || i, q = d.ingresos[i.codigo] || 0;
+    h += '<div class="row"><div class="n"><b>' + esc(pr.nombre) + '</b><small>' + fmt(pr.precio) + ' c/u</small></div>' + stepper('ingresos', i.codigo, q, lock) + '<div class="sub">' + fmt(q * pr.precio) + '</div></div>';
+  });
+  h += extrasHtml('ingreso', d, lock) + '</div><div class="card"><h2>Ventas</h2>';
+  S.catalogo.productos.filter(function (i) { return i.activo != 0 || d.ventas[i.codigo]; }).forEach(function (i) {
+    var pr = P.productos[i.codigo] || i, q = d.ventas[i.codigo] || 0, st = stock(i.codigo);
+    h += '<div class="row"><div class="n"><b>' + esc(pr.nombre) + '</b><small>' + fmt(pr.precio) + ' c/u · quedan <span class="' + (st < 0 ? 'warn' : '') + '">' + st + '</span></small></div>' + stepper('ventas', i.codigo, q, lock) + '<div class="sub">' + fmt(q * pr.precio) + '</div></div>';
+  });
+  h += extrasHtml('venta', d, lock) + '</div><div class="card"><h2>Consumo interno (no se cobra)</h2>';
+  S.catalogo.productos.filter(function (i) { return i.activo != 0 || d.consumo[i.codigo]; }).forEach(function (i) {
+    h += '<div class="row"><div class="n"><b>' + esc(i.nombre) + '</b></div>' + stepper('consumo', i.codigo, d.consumo[i.codigo] || 0, lock) + '</div>';
+  });
+  h += '</div><div class="card"><h2>Egresos</h2>';
+  S.catalogo.egresos.filter(function (i) { return i.activo != 0 || d.egresos[i.codigo]; }).forEach(function (i) {
+    h += '<div class="row"><div class="n"><b>' + esc(i.nombre) + '</b></div><div style="width:140px"><input type="number" inputmode="decimal" min="0" placeholder="₡" data-f="egresos" data-cod="' + esc(i.codigo) + '" value="' + (d.egresos[i.codigo] === undefined ? '' : d.egresos[i.codigo]) + '"' + (lock ? ' disabled' : '') + '></div></div>';
+  });
+  h += '</div>';
+  h += '<div class="card"><h2>Resumen</h2><div class="tot"><span>Entradas y membresías</span><span>' + fmt(t.ing) + '</span></div>' +
+    '<div class="tot"><span>Ventas</span><span>' + fmt(t.ven) + '</span></div>' +
+    '<div class="tot"><b>Total ingresos</b><b>' + fmt(t.totalIng) + '</b></div>' +
+    '<div class="tot"><span>Total egresos</span><span>' + fmt(t.egr) + '</span></div>' +
+    '<div class="tot big"><span>Total general</span><span>' + fmt(t.general) + '</span></div></div>';
+  h += lock ? '<button class="btn sec" data-act="reabrir">Reabrir día (Admin)</button>' : '<button class="btn" data-act="cerrar">Cerrar día</button>';
+  return h;
+}
+var extraForm = null;
+function extrasHtml(tipo, d, lock) {
+  var h = '';
+  (d.extras || []).forEach(function (x, i) {
+    if (x.tipo !== tipo) return;
+    h += '<div class="row"><div class="n"><b>' + x.cantidad + ' × ' + esc(x.nombre) + ' a ' + fmt(x.precio) + '</b><small>Precio distinto' + (x.nota ? ' · ' + esc(x.nota) : '') + '</small></div>' +
+      '<div class="sub">' + fmt(x.cantidad * x.precio) + '</div>' +
+      (lock ? '' : '<button class="btn sec" style="width:auto;margin:0;padding:8px 12px" data-act="extra-del" data-i="' + i + '">Quitar</button>') + '</div>';
+  });
+  if (lock) return h;
+  if (extraForm === tipo) {
+    var cat = (tipo === 'ingreso' ? S.catalogo.ingresos : S.catalogo.productos).filter(function (c) { return c.activo != 0; });
+    h += '<div class="row" style="display:block"><label>Concepto</label><select id="e_c" data-f="extra_c" data-tipo="' + tipo + '" style="width:100%">' +
+      cat.map(function (c) { return '<option value="' + esc(c.codigo) + '">' + esc(c.nombre) + '</option>'; }).join('') + '</select>' +
+      '<div class="grid2"><div><label>Cantidad</label><input type="number" inputmode="numeric" id="e_q" value="1" min="1"></div>' +
+      '<div><label>Precio c/u (₡)</label><input type="number" inputmode="decimal" id="e_p" value="' + (cat[0] ? cat[0].precio : 0) + '" min="0"></div></div>' +
+      '<label>Nota (ej. grupo de 10, cortesía)</label><input type="text" id="e_n" style="width:100%">' +
+      '<button class="btn" data-act="extra-add" data-tipo="' + tipo + '">Agregar</button><button class="btn sec" data-act="extra-cancel">Cancelar</button></div>';
+  } else h += '<button class="btn sec" data-act="extra-open" data-tipo="' + tipo + '">＋ Registrar a precio distinto</button>';
+  return h;
+}
+function vLlegadas() {
+  var h = '<div class="card"><h2>Registrar llegada de producto</h2><label>Fecha</label><input type="date" id="l_fecha" value="' + hoy() + '">' +
+    '<label>Producto</label><select id="l_prod" style="width:100%">' + S.catalogo.productos.filter(function (p) { return p.activo != 0; }).map(function (p) {
+      return '<option value="' + esc(p.codigo) + '">' + esc(p.nombre) + ' (' + esc(p.unidad_compra) + ' de ' + p.unidades_empaque + ')</option>';
+    }).join('') + '</select>' +
+    '<div class="grid2"><div><label>Cajas / empaques</label><input type="number" inputmode="numeric" id="l_emp" value="0" min="0"></div>' +
+    '<div><label>Unidades sueltas</label><input type="number" inputmode="numeric" id="l_uni" value="0" min="0"></div></div>' +
+    '<label>Nota (opcional)</label><input type="text" id="l_nota" style="width:100%">' +
+    '<button class="btn" data-act="llegada">Registrar llegada</button></div>';
+  h += '<div class="card"><h2>Últimas llegadas</h2>';
+  var ls = S.llegadas.slice().reverse().slice(0, 20);
+  if (!ls.length) h += '<p class="mut">Todavía no hay llegadas.</p>';
+  ls.forEach(function (l) {
+    var p = byCod(S.catalogo.productos, l.codigo);
+    h += '<div class="row"><div class="n"><b>' + esc(p ? p.nombre : l.codigo) + '</b><small>' + fechaBonita(l.fecha) + (l.nota ? ' · ' + esc(l.nota) : '') + '</small></div><div class="sub">+' + l.unidades + '</div>' +
+      (l.creado === hoy() ? '<button class="btn sec" style="width:auto;margin:0;padding:8px 12px" data-act="del-llegada" data-id="' + l.id + '">Anular</button>' : '') + '</div>';
+  });
+  return h + '</div>';
+}
+function vStock() {
+  var h = '<div class="card"><h2>Existencias actuales</h2>';
+  S.catalogo.productos.forEach(function (p) {
+    var s = stock(p.codigo), low = p.minimo && s <= p.minimo;
+    h += '<div class="row"><div class="n"><b>' + esc(p.nombre) + '</b><small>' + (p.activo == 0 ? 'inactivo · ' : '') + 'mínimo ' + p.minimo + '</small></div><div class="sub ' + (s < 0 ? 'warn' : '') + '" style="font-size:20px"><b>' + s + '</b>' + (low ? ' <span class="pill warn">bajo</span>' : '') + '</div></div>';
+  });
+  return h + '<p class="mut">Existencia = inicial + llegadas − ventas − consumo ± ajustes.</p></div>';
+}
+function vExport() {
+  var f = new Date(); f.setDate(f.getDate() - 6);
+  var desde = f.getFullYear() + '-' + p2(f.getMonth() + 1) + '-' + p2(f.getDate());
+  return '<div class="card"><h2>Exportar CSV</h2><p class="mut">Elegí el rango y mandalo por WhatsApp.</p>' +
+    '<div class="grid2"><div><label>Desde</label><input type="date" id="x_d" value="' + desde + '"></div><div><label>Hasta</label><input type="date" id="x_h" value="' + hoy() + '"></div></div>' +
+    '<button class="btn" data-act="exp" data-k="cierres">Cierres de caja</button>' +
+    '<button class="btn sec" data-act="exp" data-k="mov">Movimientos de inventario</button>' +
+    '<button class="btn sec" data-act="exp" data-k="stock">Existencias actuales</button>' +
+    (S.ultimoExport ? '<p class="mut">Último export: ' + esc(S.ultimoExport) + '</p>' : '') + '</div>';
+}
+function vAdmin() {
+  if (Date.now() > adminUntil) return '<div class="card"><h2>Administración</h2><p>Esta sección es solo para Roberto.</p><button class="btn" data-act="unlock">Entrar con PIN</button></div>';
+  return '<div class="card"><h2>Importar catálogo (CSV)</h2><p class="mut">Productos, precios, entradas y egresos. Los códigos existentes se actualizan; los nuevos se agregan.</p>' +
+    '<input type="file" id="f_cat" accept=".csv,text/csv"><button class="btn" data-act="imp-cat">Importar catálogo</button></div>' +
+    '<div class="card"><h2>Importar conteo de existencias (CSV)</h2><p class="mut">Columnas: codigo,cantidad. Deja la existencia igual al conteo físico.</p>' +
+    '<input type="file" id="f_con" accept=".csv,text/csv"><button class="btn" data-act="imp-con">Importar conteo</button></div>' +
+    '<div class="card"><h2>Estado</h2><p>Productos: ' + S.catalogo.productos.length + ' · Días registrados: ' + Object.keys(S.dias).length + ' · Llegadas: ' + S.llegadas.length + '</p>' +
+    '<button class="btn sec" data-act="lock">Salir de Admin</button></div>';
+}
+
+/* ---------- CSV ---------- */
+function parseCSV(text) {
+  text = text.replace(/^﻿/, '');
+  var first = text.split(/\r?\n/)[0] || '', sep = (first.split(';').length > first.split(',').length) ? ';' : ',';
+  var rows = [], row = [], cur = '', q = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === sep) { row.push(cur); cur = ''; }
+    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  rows = rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ''; }); });
+  if (!rows.length) return [];
+  var head = rows[0].map(function (x) { return x.trim().toLowerCase(); });
+  return rows.slice(1).map(function (r) { var o = {}; head.forEach(function (h, i) { o[h] = (r[i] || '').trim(); }); return o; });
+}
+function csvLine(a) { return a.map(function (v) { v = String(v == null ? '' : v); return /[",;\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(','); }
+function sendFile(name, lines) {
+  var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv' });
+  var file; try { file = new File([blob], name, { type: 'text/csv' }); } catch (e) { file = null; }
+  function dl() { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast('Archivo descargado: ' + name); }
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: name }).then(function () { S.ultimoExport = new Date().toLocaleString('es-CR'); save(); }).catch(function (e) { if (e && e.name !== 'AbortError') dl(); });
+  } else dl();
+}
+function exportar(k) {
+  var d1 = document.getElementById('x_d').value, d2 = document.getElementById('x_h').value, L = [], n;
+  if (k === 'cierres') {
+    L.push(csvLine(['fecha', 'numero', 'cajero', 'estado', 'tipo', 'codigo', 'concepto', 'cantidad', 'precio_unit', 'total']));
+    Object.keys(S.dias).sort().forEach(function (f) {
+      if (f < d1 || f > d2) return;
+      var d = S.dias[f], P = prices(d), t = totals(d), est = d.cerrado ? 'cerrado' : 'abierto', b = [f, d.numero || '', d.cajero, est];
+      Object.keys(d.ingresos).forEach(function (c) { if (d.ingresos[c]) L.push(csvLine(b.concat(['ingreso', c, P.ingresos[c].nombre, d.ingresos[c], P.ingresos[c].precio, d.ingresos[c] * P.ingresos[c].precio]))); });
+      Object.keys(d.ventas).forEach(function (c) { if (d.ventas[c]) L.push(csvLine(b.concat(['venta', c, P.productos[c].nombre, d.ventas[c], P.productos[c].precio, d.ventas[c] * P.productos[c].precio]))); });
+      (d.extras || []).forEach(function (x) { L.push(csvLine(b.concat([x.tipo + '_precio_distinto', x.codigo, x.nombre + (x.nota ? ' (' + x.nota + ')' : ''), x.cantidad, x.precio, x.cantidad * x.precio]))); });
+      Object.keys(d.consumo).forEach(function (c) { if (d.consumo[c]) L.push(csvLine(b.concat(['consumo_interno', c, (P.productos[c] || {}).nombre || c, d.consumo[c], 0, 0]))); });
+      Object.keys(d.egresos).forEach(function (c) { if (num(d.egresos[c])) { var e = byCod(S.catalogo.egresos, c); L.push(csvLine(b.concat(['egreso', c, e ? e.nombre : c, 1, num(d.egresos[c]), num(d.egresos[c])]))); } });
+      L.push(csvLine(b.concat(['resumen', 'TOTAL_INGRESOS', 'Total ingresos', '', '', t.totalIng])));
+      L.push(csvLine(b.concat(['resumen', 'TOTAL_EGRESOS', 'Total egresos', '', '', t.egr])));
+      L.push(csvLine(b.concat(['resumen', 'TOTAL_GENERAL', 'Total general', '', '', t.general])));
+    });
+    n = 'cierres_' + d1 + '_a_' + d2 + '.csv';
+  } else if (k === 'mov') {
+    L.push(csvLine(['fecha', 'codigo', 'producto', 'tipo', 'unidades', 'detalle']));
+    var M = [];
+    S.llegadas.forEach(function (l) { M.push([l.fecha, l.codigo, 'llegada', l.unidades, l.nota || '']); });
+    S.ajustes.forEach(function (a) { M.push([a.fecha, a.codigo, 'ajuste', a.delta, a.motivo || '']); });
+    Object.keys(S.dias).forEach(function (f) {
+      Object.keys(S.dias[f].ventas).forEach(function (c) { if (S.dias[f].ventas[c]) M.push([f, c, 'venta', -S.dias[f].ventas[c], '']); });
+      Object.keys(S.dias[f].consumo).forEach(function (c) { if (S.dias[f].consumo[c]) M.push([f, c, 'consumo_interno', -S.dias[f].consumo[c], '']); });
+      (S.dias[f].extras || []).forEach(function (x) { if (x.tipo === 'venta') M.push([f, x.codigo, 'venta_precio_distinto', -x.cantidad, x.nota || '']); });
+    });
+    M.filter(function (m) { return m[0] >= d1 && m[0] <= d2; }).sort(function (a, b) { return a[0] < b[0] ? -1 : 1; }).forEach(function (m) {
+      var p = byCod(S.catalogo.productos, m[1]); L.push(csvLine([m[0], m[1], p ? p.nombre : m[1], m[2], m[3], m[4]]));
+    });
+    n = 'movimientos_' + d1 + '_a_' + d2 + '.csv';
+  } else {
+    L.push(csvLine(['fecha', 'codigo', 'producto', 'existencia', 'minimo']));
+    S.catalogo.productos.forEach(function (p) { L.push(csvLine([hoy(), p.codigo, p.nombre, stock(p.codigo), p.minimo])); });
+    n = 'existencias_' + hoy() + '.csv';
+  }
+  sendFile(n, L);
+}
+
+/* ---------- acciones ---------- */
+function pedirPin() {
+  if (!S.config.pin) {
+    var n = prompt('Todavía no hay PIN de administración. Creá uno (mínimo 4 números):');
+    if (n === null) return false;
+    if (!/^\d{4,}$/.test(n.trim())) { toast('El PIN debe tener al menos 4 números'); return false; }
+    S.config.pin = n.trim(); save(); adminUntil = Date.now() + 5 * 60000; toast('PIN creado'); return true;
+  }
+  var v = prompt('PIN de administración:'); if (v === null) return false;
+  if (v === String(S.config.pin)) { adminUntil = Date.now() + 5 * 60000; return true; }
+  toast('PIN incorrecto'); return false;
+}
+function readFile(id, cb) {
+  var f = document.getElementById(id).files[0]; if (!f) { toast('Elegí un archivo CSV'); return; }
+  var r = new FileReader(); r.onload = function () { cb(parseCSV(String(r.result))); }; r.readAsText(f, 'utf-8');
+}
+function setQty(sec, cod, v) {
+  var d = ensureDay(fechaVista); if (d.cerrado) return;
+  v = Math.max(0, Math.floor(num(v))); if (v) d[sec][cod] = v; else delete d[sec][cod];
+  save(); render();
+}
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('[data-act]'); if (!b) return;
+  var a = b.dataset.act;
+  if (a === 'tab') { view = b.dataset.v; render(); window.scrollTo(0, 0); }
+  else if (a === 'step') { var d = getDay(fechaVista); setQty(b.dataset.sec, b.dataset.cod, (d[b.dataset.sec][b.dataset.cod] || 0) + parseInt(b.dataset.d, 10)); }
+  else if (a === 'cerrar') {
+    var d = getDay(fechaVista), t = totals(d);
+    if (!d.cajero.trim()) { toast('Escribí el nombre del cajero'); return; }
+    if (!confirm('¿Cerrar el día ' + fechaBonita(fechaVista) + '?\nTotal general: ' + fmt(t.general) + '\nDespués solo Roberto puede reabrirlo.')) return;
+    d = ensureDay(fechaVista); d.snap = prices(d); d.numero = S.config.siguiente++; d.cerrado = true; save(); render(); toast('Día cerrado. Cierre N° ' + d.numero);
+  }
+  else if (a === 'reabrir') { if (pedirPin()) { var dd = ensureDay(fechaVista); dd.cerrado = false; dd.snap = null; save(); render(); toast('Día reabierto'); } }
+  else if (a === 'llegada') {
+    var cod = document.getElementById('l_prod').value, p = byCod(S.catalogo.productos, cod);
+    var u = Math.floor(num(document.getElementById('l_emp').value)) * num(p.unidades_empaque) + Math.floor(num(document.getElementById('l_uni').value));
+    if (u <= 0) { toast('Poné una cantidad'); return; }
+    S.llegadas.push({ id: Date.now(), fecha: document.getElementById('l_fecha').value || hoy(), codigo: cod, unidades: u, nota: document.getElementById('l_nota').value, creado: hoy() });
+    save(); render(); toast('Llegada registrada: +' + u + ' unidades');
+  }
+  else if (a === 'del-llegada') { if (confirm('¿Anular esta llegada?')) { S.llegadas = S.llegadas.filter(function (l) { return String(l.id) !== b.dataset.id; }); save(); render(); } }
+  else if (a === 'extra-open') { extraForm = b.dataset.tipo; render(); }
+  else if (a === 'extra-cancel') { extraForm = null; render(); }
+  else if (a === 'extra-add') {
+    var tp = b.dataset.tipo, cat = tp === 'ingreso' ? S.catalogo.ingresos : S.catalogo.productos, it = byCod(cat, document.getElementById('e_c').value);
+    var q = Math.floor(num(document.getElementById('e_q').value)), pr = num(document.getElementById('e_p').value);
+    if (!it || q <= 0) { toast('Poné una cantidad'); return; }
+    var dx = ensureDay(fechaVista); if (dx.cerrado) return;
+    dx.extras.push({ tipo: tp, codigo: it.codigo, nombre: it.nombre, cantidad: q, precio: pr, nota: document.getElementById('e_n').value.trim() });
+    extraForm = null; save(); render(); toast('Agregado a precio distinto');
+  }
+  else if (a === 'extra-del') { var dy = ensureDay(fechaVista); if (!dy.cerrado) { dy.extras.splice(parseInt(b.dataset.i, 10), 1); save(); render(); } }
+  else if (a === 'exp') exportar(b.dataset.k);
+  else if (a === 'unlock') { if (pedirPin()) render(); }
+  else if (a === 'lock') { adminUntil = 0; render(); }
+  else if (a === 'imp-cat') readFile('f_cat', function (rows) {
+    var nuevos = 0, act = 0;
+    rows.forEach(function (r) {
+      var t = (r.tipo || '').toLowerCase(), c = (r.codigo || '').toUpperCase(); if (!c) return;
+      if (t === 'config') { if (c === 'PIN' && r.nombre) { S.config.pin = r.nombre; act++; } return; }
+      var key = t === 'producto' ? 'productos' : t === 'ingreso' ? 'ingresos' : t === 'egreso' ? 'egresos' : null; if (!key) return;
+      var o = byCod(S.catalogo[key], c), nuevo = !o; if (nuevo) { o = { codigo: c }; S.catalogo[key].push(o); nuevos++; } else act++;
+      if (r.nombre) o.nombre = r.nombre;
+      if (r.activo !== undefined && r.activo !== '') o.activo = parseInt(r.activo, 10); else if (nuevo) o.activo = 1;
+      if (key !== 'egresos' && r.precio !== '') o.precio = num(r.precio);
+      if (key === 'productos') {
+        if (r.costo !== '') o.costo = num(r.costo);
+        if (r.unidad_compra) o.unidad_compra = r.unidad_compra; else if (nuevo) o.unidad_compra = 'Caja';
+        if (r.unidades_empaque !== '') o.unidades_empaque = num(r.unidades_empaque) || 1; else if (nuevo) o.unidades_empaque = 1;
+        if (nuevo) o.existencia_inicial = num(r.existencia_inicial);
+        if (r.minimo !== '') o.minimo = num(r.minimo); else if (nuevo) o.minimo = 0;
+      }
+    });
+    save(); render(); toast('Catálogo importado: ' + nuevos + ' nuevos, ' + act + ' actualizados');
+  });
+  else if (a === 'imp-con') readFile('f_con', function (rows) {
+    var n = 0, bad = [];
+    rows.forEach(function (r) {
+      var c = (r.codigo || '').toUpperCase(); if (!c) return;
+      if (!byCod(S.catalogo.productos, c)) { bad.push(c); return; }
+      var delta = num(r.cantidad) - stock(c); if (delta) { S.ajustes.push({ id: Date.now() + n, fecha: hoy(), codigo: c, delta: delta, motivo: 'Conteo CSV' }); n++; }
+    });
+    save(); render(); toast('Conteo aplicado: ' + n + ' ajustes' + (bad.length ? ' · códigos no encontrados: ' + bad.join(', ') : ''));
+  });
+});
+document.addEventListener('change', function (e) {
+  var f = e.target.dataset && e.target.dataset.f; if (!f) return;
+  var v = e.target.value;
+  if (f === 'extra_c') {
+    var cx = byCod(e.target.dataset.tipo === 'ingreso' ? S.catalogo.ingresos : S.catalogo.productos, v);
+    if (cx) document.getElementById('e_p').value = cx.precio;
+    return;
+  }
+  if (f === 'fecha') { fechaVista = v || hoy(); render(); return; }
+  if (f === 'ingresos' || f === 'ventas' || f === 'consumo') { setQty(f, e.target.dataset.cod, v); return; }
+  var d = ensureDay(fechaVista); if (d.cerrado) return;
+  if (f === 'cajero') { d.cajero = v; S.ultimoCajero = v; }
+  else if (f === 'egresos') { if (v === '') delete d.egresos[e.target.dataset.cod]; else d.egresos[e.target.dataset.cod] = num(v); }
+  save(); render();
+});
+if ('serviceWorker' in navigator && /^https?:/.test(location.protocol)) navigator.serviceWorker.register('sw.js').catch(function () {});
+try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+window.addEventListener('online', render); window.addEventListener('offline', render);
+render();
+</script>
+</body>
+</html>
