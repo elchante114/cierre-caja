@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1f5f3b">
+<meta name="theme-color" content="#c42a2a">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon-192.png">
 <title>Cierre de Caja Senderos</title>
 <style>
-:root{--bg:#f4f6f4;--card:#fff;--ink:#1c2a22;--mut:#5d6b63;--line:#d9e0db;--pri:#1f5f3b;--pri-ink:#fff;--warn:#b3261e;--ok:#1f5f3b;--soft:#e7f0ea}
-@media (prefers-color-scheme:dark){:root{--bg:#131a16;--card:#1c2620;--ink:#e8efe9;--mut:#9fb0a5;--line:#2d3b33;--pri:#3b9a63;--pri-ink:#07140c;--warn:#ff8a80;--ok:#7fd6a0;--soft:#24332a}}
+:root{--bg:#f4f6f4;--card:#fff;--ink:#1c2a22;--mut:#5d6b63;--line:#d9e0db;--pri:#c42a2a;--pri-ink:#fff;--warn:#b3261e;--ok:#1f5f3b;--soft:#e7f0ea}
+@media (prefers-color-scheme:dark){:root{--bg:#131a16;--card:#1c2620;--ink:#e8efe9;--mut:#9fb0a5;--line:#2d3b33;--pri:#c42a2a;--pri-ink:#fff;--warn:#ff8a80;--ok:#7fd6a0;--soft:#24332a}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,sans-serif;padding-bottom:84px}
 header{background:var(--pri);color:var(--pri-ink);padding:12px 16px;position:sticky;top:0;z-index:5}
-header h1{margin:0;font-size:18px}header small{opacity:.85}
+header{display:flex;align-items:center;gap:10px}header img{width:36px;height:36px;border-radius:6px}
+header h1{margin:0;font-size:18px}header small{opacity:.9}
 main{padding:12px 16px;max-width:640px;margin:0 auto}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 12px}
 .card h2{margin:0 0 8px;font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
@@ -43,7 +44,7 @@ label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
 </style>
 </head>
 <body>
-<header><h1>Cierre de Caja · Senderos de Colón</h1><small id="hsub"></small></header>
+<header><img src="icon-192.png" alt="SC"><div><h1>Cierre de Caja · Senderos de Colón</h1><small id="hsub"></small></div></header>
 <main id="app"></main>
 <nav id="nav"></nav>
 <div id="toast"></div>
