@@ -147,7 +147,7 @@ function stock(cod) {
 }
 
 /* ---------- vistas ---------- */
-var TABS = [['hoy', '🧾', 'Hoy'], ['llegadas', '📦', 'Llegadas'], ['stock', '📊', 'Existencias'], ['export', '📤', 'Exportar'], ['admin', '🔒', 'Admin']];
+var TABS = [['hoy', '🧾', 'Hoy'], ['llegadas', '📦', 'Llegadas'], ['stock', '📊', 'Existencias'], ['export', '📤', 'Exportar'], ['admin', '⚙️', 'Admin']];
 function render() {
   var y = window.scrollY;
   document.getElementById('nav').innerHTML = TABS.map(function (t) {
@@ -277,7 +277,11 @@ function vStock() {
 function vExport() {
   var f = new Date(); f.setDate(f.getDate() - 6);
   var desde = f.getFullYear() + '-' + p2(f.getMonth() + 1) + '-' + p2(f.getDate());
-  return '<div class="card"><h2>Exportar CSV</h2><p class="mut">Elegí el rango y mandalo por WhatsApp.</p>' +
+  var r = rangoEnvio();
+  return '<div class="card"><h2>Enviar a Roberto</h2><p class="mut">Manda de una vez cierres, pagos SINPE, movimientos de inventario y existencias.<br>Desde ' + fechaBonita(r[0]) + ' hasta ' + fechaBonita(r[1]) + '.</p>' +
+    '<button class="btn" data-act="send-all">📤 Enviar todo por WhatsApp</button>' +
+    (S.ultimoEnvio ? '<p class="mut">Último envío: ' + esc(S.ultimoEnvio) + '</p>' : '') + '</div>' +
+    '<div class="card"><h2>Por separado</h2><p class="mut">Solo si Roberto te pide un archivo. Elegí el rango.</p>' +
     '<div class="grid2"><div><label>Desde</label><input type="date" id="x_d" value="' + desde + '"></div><div><label>Hasta</label><input type="date" id="x_h" value="' + hoy() + '"></div></div>' +
     '<button class="btn" data-act="exp" data-k="cierres">Cierres de caja</button>' +
     '<button class="btn" data-act="exp" data-k="sinpe">Pagos SINPE (para el banco)</button>' +
@@ -286,13 +290,12 @@ function vExport() {
     (S.ultimoExport ? '<p class="mut">Último export: ' + esc(S.ultimoExport) + '</p>' : '') + '</div>';
 }
 function vAdmin() {
-  if (Date.now() > adminUntil) return '<div class="card"><h2>Administración</h2><p>Esta sección es solo para Roberto.</p><button class="btn" data-act="unlock">Entrar con PIN</button></div>';
   return '<div class="card"><h2>Importar catálogo (CSV)</h2><p class="mut">Productos, precios, entradas y egresos. Los códigos existentes se actualizan; los nuevos se agregan.</p>' +
     '<input type="file" id="f_cat" accept=".csv,text/csv"><button class="btn" data-act="imp-cat">Importar catálogo</button></div>' +
     '<div class="card"><h2>Importar conteo de existencias (CSV)</h2><p class="mut">Columnas: codigo,cantidad. Deja la existencia igual al conteo físico.</p>' +
     '<input type="file" id="f_con" accept=".csv,text/csv"><button class="btn" data-act="imp-con">Importar conteo</button></div>' +
     '<div class="card"><h2>Estado</h2><p>Productos: ' + S.catalogo.productos.length + ' · Días registrados: ' + Object.keys(S.dias).length + ' · Llegadas: ' + S.llegadas.length + '</p>' +
-    '<button class="btn sec" data-act="lock">Salir de Admin</button></div>';
+    '<p class="mut">PIN para reabrir días cerrados: ' + (S.config.pin ? 'configurado' : 'sin configurar (se pone por CSV)') + '</p></div>';
 }
 
 /* ---------- CSV ---------- */
@@ -323,8 +326,32 @@ function sendFile(name, lines) {
     navigator.share({ files: [file], title: name }).then(function () { S.ultimoExport = new Date().toLocaleString('es-CR'); save(); }).catch(function (e) { if (e && e.name !== 'AbortError') dl(); });
   } else dl();
 }
-function exportar(k) {
-  var d1 = document.getElementById('x_d').value, d2 = document.getElementById('x_h').value, L = [], n;
+function addDays(f, n) { var a = f.split('-'), d = new Date(+a[0], +a[1] - 1, +a[2] + n); return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+function rangoEnvio() { return [S.ultimoEnvioFecha ? addDays(S.ultimoEnvioFecha, -1) : addDays(hoy(), -7), hoy()]; }
+function sendFiles(list) {
+  var files = list.map(function (x) { return new File([new Blob(['﻿' + x[1].join('\r\n')], { type: 'text/csv' })], x[0], { type: 'text/csv' }); });
+  function descargar() {
+    files.forEach(function (f, i) { setTimeout(function () { var a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }, i * 500); });
+    toast('Se descargaron ' + files.length + ' archivos: mandalos por WhatsApp.');
+  }
+  if (navigator.canShare && navigator.canShare({ files: files })) {
+    navigator.share({ files: files, title: 'Cierre Senderos' }).then(function () {
+      S.ultimoEnvioFecha = hoy(); S.ultimoEnvio = new Date().toLocaleString('es-CR'); save(); render(); toast('Listo: archivos enviados');
+    }).catch(function (e) { if (e && e.name !== 'AbortError') descargar(); });
+  } else descargar();
+}
+function enviarTodo() {
+  var r = rangoEnvio(), d1 = r[0], d2 = r[1], hay = false, sinCerrar = [];
+  Object.keys(S.dias).forEach(function (f) {
+    if (f >= d1 && f <= d2) { hay = true; if (!S.dias[f].cerrado && f !== hoy()) sinCerrar.push(fechaBonita(f)); }
+  });
+  S.llegadas.forEach(function (l) { if (l.fecha >= d1 && l.fecha <= d2) hay = true; });
+  if (!hay) { toast('No hay datos para enviar en ese rango'); return; }
+  if (sinCerrar.length && !confirm('Hay días sin cerrar: ' + sinCerrar.join(', ') + '.\n¿Mandar igual?')) return;
+  sendFiles(['cierres', 'sinpe', 'mov', 'stock'].map(function (k) { return exportar(k, d1, d2, true); }));
+}
+function exportar(k, d1o, d2o, ret) {
+  var d1 = d1o || document.getElementById('x_d').value, d2 = d2o || document.getElementById('x_h').value, L = [], n;
   if (k === 'cierres') {
     var sinpeIdx = {};
     L.push(csvLine(['fecha', 'numero', 'cajero', 'estado', 'tipo', 'codigo', 'concepto', 'cantidad', 'precio_unit', 'total', 'hora']));
@@ -376,18 +403,14 @@ function exportar(k) {
     S.catalogo.productos.forEach(function (p) { L.push(csvLine([hoy(), p.codigo, p.nombre, stock(p.codigo), p.minimo])); });
     n = 'existencias_' + hoy() + '.csv';
   }
+  if (ret) return [n, L];
   sendFile(n, L);
 }
 
 /* ---------- acciones ---------- */
 function pedirPin() {
-  if (!S.config.pin) {
-    var n = prompt('Todavía no hay PIN de administración. Creá uno (mínimo 4 números):');
-    if (n === null) return false;
-    if (!/^\d{4,}$/.test(n.trim())) { toast('El PIN debe tener al menos 4 números'); return false; }
-    S.config.pin = n.trim(); save(); adminUntil = Date.now() + 5 * 60000; toast('PIN creado'); return true;
-  }
-  var v = prompt('PIN de administración:'); if (v === null) return false;
+  if (!S.config.pin) { toast('Solo Roberto puede reabrir un día cerrado. Avisale.'); return false; }
+  var v = prompt('PIN de Roberto para reabrir el día:'); if (v === null) return false;
   if (v === String(S.config.pin)) { adminUntil = Date.now() + 5 * 60000; return true; }
   toast('PIN incorrecto'); return false;
 }
@@ -434,6 +457,7 @@ document.addEventListener('click', function (e) {
   else if (a === 'sinpe-chip') { var sn = document.getElementById('s_n'); addSinpe(b.dataset.m, sn ? sn.value : ''); }
   else if (a === 'sinpe-add') { addSinpe(document.getElementById('s_m').value, document.getElementById('s_n').value); }
   else if (a === 'sinpe-del') { var dz = ensureDay(fechaVista); if (!dz.cerrado) { dz.sinpe.splice(parseInt(b.dataset.i, 10), 1); save(); render(); } }
+  else if (a === 'send-all') enviarTodo();
   else if (a === 'exp') exportar(b.dataset.k);
   else if (a === 'unlock') { if (pedirPin()) render(); }
   else if (a === 'lock') { adminUntil = 0; render(); }
