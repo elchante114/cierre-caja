@@ -94,6 +94,8 @@ function seed() {
 function migrar(s) {
   s.config = s.config || {};
   if (s.config.fondo === undefined) s.config.fondo = 30000;
+  if (!s.trabajadores) s.trabajadores = [];
+  if (!s.horas) s.horas = {};
   if (!s.efectivo) s.efectivo = { entregas: [], arqueos: [] };
   if (!s.efectivo.entregas) s.efectivo.entregas = [];
   if (!s.efectivo.arqueos) s.efectivo.arqueos = [];
@@ -170,14 +172,14 @@ function stock(cod) {
 }
 
 /* ---------- vistas ---------- */
-var TABS = [['hoy', '🧾', 'Hoy'], ['efectivo', '💵', 'Efectivo'], ['llegadas', '📦', 'Llegadas'], ['stock', '📊', 'Stock'], ['export', '📤', 'Enviar'], ['admin', '⚙️', 'Admin']];
+var TABS = [['hoy', '🧾', 'Hoy'], ['efectivo', '💵', 'Efectivo'], ['horas', '⏱️', 'Horas'], ['llegadas', '📦', 'Inventario'], ['export', '📤', 'Enviar'], ['admin', '⚙️', 'Admin']];
 function render() {
   var y = window.scrollY;
   document.getElementById('nav').innerHTML = TABS.map(function (t) {
     return '<button data-act="tab" data-v="' + t[0] + '" class="' + (view === t[0] ? 'on' : '') + '"><span>' + t[1] + '</span>' + t[2] + '</button>';
   }).join('');
   document.getElementById('hsub').textContent = (view === 'hoy' ? fechaBonita(fechaVista) + ' · ' : '') + (navigator.onLine ? 'Funciona sin internet' : 'Sin conexión: todo se guarda en el teléfono');
-  var h = { hoy: vHoy, efectivo: vEfectivo, llegadas: vLlegadas, stock: vStock, export: vExport, admin: vAdmin }[view]();
+  var h = { hoy: vHoy, efectivo: vEfectivo, horas: vHoras, llegadas: function () { return vLlegadas() + vStock(); }, export: vExport, admin: vAdmin }[view]();
   document.getElementById('app').innerHTML = h;
   window.scrollTo(0, y);
 }
@@ -272,6 +274,67 @@ function vEfectivo() {
   });
   return h + '</div>';
 }
+/* ---------- horas de los trabajadores ---------- */
+var ESTADOS = [['trabajo', 'Trabajó'], ['feriado', 'Trabajó en feriado'], ['libre', 'Día libre'], ['vacaciones', 'Vacaciones'], ['incapacidad', 'Incapacidad'], ['permiso', 'Permiso'], ['falta', 'Faltó']];
+function mins(t) { if (!t) return null; var a = String(t).split(':'); return (+a[0]) * 60 + (+a[1] || 0); }
+function horarioDe(w, f) {
+  var a = f.split('-'), dow = new Date(+a[0], +a[1] - 1, +a[2]).getDay();
+  return { ent: w.entrada || '', sal: ((dow === 0 || dow === 6) && w.salida_finde) ? w.salida_finde : (w.salida || ''), jornada: num(w.jornada) || 8 };
+}
+function calcHoras(w, r, f) {
+  var sc = horarioDe(w, f), e = mins(r.ent), s = mins(r.sal), se = mins(sc.ent), ss = mins(sc.sal), o = { sched: sc, horas: 0, enHorario: 0, atraso: 0, antes: 0, extra: 0 };
+  if (e !== null && s !== null && s > e) {
+    o.horas = (s - e) / 60; o.extra = Math.max(0, o.horas - sc.jornada);
+    if (se !== null && ss !== null) o.enHorario = Math.max(0, (Math.min(s, ss) - Math.max(e, se)) / 60);
+  }
+  if (e !== null && se !== null) o.atraso = Math.max(0, e - se);
+  if (s !== null && ss !== null) o.antes = Math.max(0, ss - s);
+  return o;
+}
+function horaRec(f, w) {
+  if (!S.horas[f]) S.horas[f] = {};
+  if (!S.horas[f][w]) S.horas[f][w] = { estado: '', ent: '', sal: '', ent_marca: '', sal_marca: '', editado: false, nota: '' };
+  return S.horas[f][w];
+}
+function marcar(w, k) {
+  if (fechaVista !== hoy()) { toast('Para marcar "ahora" cambiá la fecha a hoy.'); return; }
+  var r = horaRec(fechaVista, w), n = new Date(), t = p2(n.getHours()) + ':' + p2(n.getMinutes());
+  var campo = k === 'ent' ? 'ent' : 'sal';
+  if (r[campo] && !confirm('Ya tiene ' + (k === 'ent' ? 'entrada' : 'salida') + ' a las ' + r[campo] + '. ¿Cambiarla a las ' + t + '?')) return;
+  if (!r.estado || r.estado === 'libre' || r.estado === 'falta') r.estado = 'trabajo';
+  r[campo] = t; r[campo + '_marca'] = t;
+  save(); render(); toast((k === 'ent' ? 'Entrada ' : 'Salida ') + t + ' registrada');
+}
+function setHora(w, field, v) {
+  var r = horaRec(fechaVista, w);
+  if (field === 'h_estado') r.estado = v;
+  else if (field === 'h_ent' || field === 'h_sal') { r[field === 'h_ent' ? 'ent' : 'sal'] = v; r.editado = true; if (!r.nota) toast('Escribí una nota: por qué cambiaste la hora'); }
+  else if (field === 'h_nota') r.nota = v;
+  save(); render();
+}
+function vHoras() {
+  var f = fechaVista, ws = S.trabajadores.filter(function (w) { return w.activo != 0; });
+  var h = '<div class="card"><label>Fecha</label><input type="date" data-f="fecha" value="' + f + '"><p class="mut">Tocá <b>Entró ahora</b> cuando llegue cada compañero y <b>Salió ahora</b> cuando se vaya. La hora la pone el teléfono.</p></div>';
+  if (!ws.length) return h + '<div class="card"><p>Todavía no hay trabajadores cargados. Roberto te manda un archivo para cargarlos en Admin.</p></div>';
+  ws.forEach(function (w) {
+    var r = (S.horas[f] || {})[w.codigo] || {}, c = calcHoras(w, r, f), sc = c.sched, cod = esc(w.codigo);
+    var trabaja = !r.estado || r.estado === 'trabajo' || r.estado === 'feriado';
+    h += '<div class="card"><h2>' + esc(w.nombre) + '</h2><p class="mut">Horario: ' + esc(sc.ent) + ' a ' + esc(sc.sal) + ' · jornada de ' + sc.jornada + ' h</p>' +
+      '<label>Estado del día</label><select data-f="h_estado" data-w="' + cod + '" style="width:100%"><option value="">— sin marcar —</option>' +
+      ESTADOS.map(function (x) { return '<option value="' + x[0] + '"' + (r.estado === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>';
+    if (trabaja) {
+      h += '<div class="grid2"><button class="btn" data-act="h-now" data-w="' + cod + '" data-k="ent">Entró ahora</button><button class="btn sec" data-act="h-now" data-w="' + cod + '" data-k="sal">Salió ahora</button></div>' +
+        '<div class="grid2"><div><label>Entrada</label><input type="time" data-f="h_ent" data-w="' + cod + '" value="' + esc(r.ent || '') + '"></div>' +
+        '<div><label>Salida</label><input type="time" data-f="h_sal" data-w="' + cod + '" value="' + esc(r.sal || '') + '"></div></div>';
+      if (r.ent && r.sal) h += '<div class="tot"><b>Horas trabajadas</b><b>' + c.horas.toFixed(2) + ' h</b></div>' + (c.extra > 0 ? '<p class="mut">Más de la jornada: ' + c.extra.toFixed(2) + ' h</p>' : '');
+      if (c.atraso > 0) h += '<p class="warn">Llegó ' + c.atraso + ' min tarde</p>';
+      if (c.antes > 0 && r.sal) h += '<p class="warn">Salió ' + c.antes + ' min antes</p>';
+      if (r.editado) h += '<p class="mut">✎ Hora editada (marcada: ' + esc(r.ent_marca || '—') + ' / ' + esc(r.sal_marca || '—') + ')</p>';
+    }
+    h += '<label>Nota</label><input type="text" data-f="h_nota" data-w="' + cod + '" value="' + esc(r.nota || '') + '" placeholder="ej. llegó tarde, se fue antes"></div>';
+  });
+  return h;
+}
 function sinpeHtml(d, lock) {
   var h = '<div class="card"><h2>Pagos por SINPE</h2>', list = d.sinpe || [], tot = 0;
   list.forEach(function (s, i) {
@@ -349,7 +412,7 @@ function vExport() {
   var f = new Date(); f.setDate(f.getDate() - 6);
   var desde = f.getFullYear() + '-' + p2(f.getMonth() + 1) + '-' + p2(f.getDate());
   var r = rangoEnvio();
-  return '<div class="card"><h2>Enviar a Roberto</h2><p class="mut">Manda de una vez cierres, pagos SINPE, movimientos de efectivo, movimientos de inventario y existencias.<br>Desde ' + fechaBonita(r[0]) + ' hasta ' + fechaBonita(r[1]) + '.</p>' +
+  return '<div class="card"><h2>Enviar a Roberto</h2><p class="mut">Manda de una vez cierres, pagos SINPE, efectivo, horas, movimientos de inventario y existencias.<br>Desde ' + fechaBonita(r[0]) + ' hasta ' + fechaBonita(r[1]) + '.</p>' +
     '<button class="btn" data-act="send-all">📤 Enviar todo por WhatsApp</button>' +
     (S.ultimoEnvio ? '<p class="mut">Último envío: ' + esc(S.ultimoEnvio) + '</p>' : '') + '</div>' +
     '<div class="card"><h2>Por separado</h2><p class="mut">Solo si Roberto te pide un archivo. Elegí el rango.</p>' +
@@ -357,6 +420,7 @@ function vExport() {
     '<button class="btn" data-act="exp" data-k="cierres">Cierres de caja</button>' +
     '<button class="btn" data-act="exp" data-k="sinpe">Pagos SINPE (para el banco)</button>' +
     '<button class="btn sec" data-act="exp" data-k="efectivo">Movimientos de efectivo</button>' +
+    '<button class="btn sec" data-act="exp" data-k="horas">Horas de los trabajadores</button>' +
     '<button class="btn sec" data-act="exp" data-k="mov">Movimientos de inventario</button>' +
     '<button class="btn sec" data-act="exp" data-k="stock">Existencias actuales</button>' +
     (S.ultimoExport ? '<p class="mut">Último export: ' + esc(S.ultimoExport) + '</p>' : '') + '</div>';
@@ -418,9 +482,10 @@ function enviarTodo() {
     if (f >= d1 && f <= d2) { hay = true; if (!S.dias[f].cerrado && f !== hoy()) sinCerrar.push(fechaBonita(f)); }
   });
   S.llegadas.forEach(function (l) { if (l.fecha >= d1 && l.fecha <= d2) hay = true; });
+  Object.keys(S.horas).forEach(function (f) { if (f >= d1 && f <= d2) hay = true; });
   if (!hay) { toast('No hay datos para enviar en ese rango'); return; }
   if (sinCerrar.length && !confirm('Hay días sin cerrar: ' + sinCerrar.join(', ') + '.\n¿Mandar igual?')) return;
-  sendFiles(['cierres', 'sinpe', 'efectivo', 'mov', 'stock'].map(function (k) { return exportar(k, d1, d2, true); }));
+  sendFiles(['cierres', 'sinpe', 'efectivo', 'horas', 'mov', 'stock'].map(function (k) { return exportar(k, d1, d2, true); }));
 }
 function exportar(k, d1o, d2o, ret) {
   var d1 = d1o || document.getElementById('x_d').value, d2 = d2o || document.getElementById('x_h').value, L = [], n;
@@ -451,6 +516,17 @@ function exportar(k, d1o, d2o, ret) {
     });
     L = L.map(function (l, i) { return (i === 0 || sinpeIdx[i]) ? l : l + ','; });
     n = 'cierres_' + d1 + '_a_' + d2 + '.csv';
+  } else if (k === 'horas') {
+    L.push(csvLine(['fecha', 'codigo', 'trabajador', 'estado', 'entrada', 'salida', 'horas_totales', 'horas_en_horario', 'horario_entrada', 'horario_salida', 'jornada', 'atraso_min', 'salida_antes_min', 'horas_extra_estimadas', 'editado', 'marca_entrada', 'marca_salida', 'nota']));
+    Object.keys(S.horas).sort().forEach(function (f) {
+      if (f < d1 || f > d2) return;
+      S.trabajadores.forEach(function (w) {
+        var r = S.horas[f][w.codigo]; if (!r || (!r.estado && !r.ent && !r.sal)) return;
+        var c = calcHoras(w, r, f);
+        L.push(csvLine([f, w.codigo, w.nombre, r.estado || 'trabajo', r.ent, r.sal, c.horas.toFixed(2), c.enHorario.toFixed(2), c.sched.ent, c.sched.sal, c.sched.jornada, c.atraso, c.antes, c.extra.toFixed(2), r.editado ? 'si' : 'no', r.ent_marca, r.sal_marca, r.nota || '']));
+      });
+    });
+    n = 'horas_' + d1 + '_a_' + d2 + '.csv';
   } else if (k === 'efectivo') {
     var E = [];
     Object.keys(S.dias).forEach(function (f) {
@@ -595,6 +671,7 @@ document.addEventListener('click', function (e) {
   else if (a === 'sinpe-chip') { var sn = document.getElementById('s_n'); addSinpe(b.dataset.m, sn ? sn.value : ''); }
   else if (a === 'sinpe-add') { addSinpe(document.getElementById('s_m').value, document.getElementById('s_n').value); }
   else if (a === 'sinpe-del') { var dz = ensureDay(fechaVista); if (!dz.cerrado) { dz.sinpe.splice(parseInt(b.dataset.i, 10), 1); save(); render(); } }
+  else if (a === 'h-now') marcar(b.dataset.w, b.dataset.k);
   else if (a === 'send-all') enviarTodo();
   else if (a === 'exp') exportar(b.dataset.k);
   else if (a === 'unlock') { if (pedirPin()) render(); }
@@ -606,6 +683,17 @@ document.addEventListener('click', function (e) {
       if (t === 'config') {
         if (c === 'PIN' && r.nombre) { S.config.pin = r.nombre; act++; }
         if (c === 'FONDO' && r.nombre) { S.config.fondo = num(r.nombre); act++; }
+        return;
+      }
+      if (t === 'trabajador') {
+        var wk = S.trabajadores.filter(function (x) { return x.codigo === c; })[0];
+        if (!wk) { wk = { codigo: c, activo: 1 }; S.trabajadores.push(wk); nuevos++; } else act++;
+        if (r.nombre) wk.nombre = r.nombre;
+        if (r.entrada) wk.entrada = r.entrada;
+        if (r.salida) wk.salida = r.salida;
+        if (r.salida_finde) wk.salida_finde = r.salida_finde;
+        if (r.jornada) wk.jornada = num(r.jornada);
+        if (r.activo !== undefined && r.activo !== '') wk.activo = parseInt(r.activo, 10);
         return;
       }
       var key = t === 'producto' ? 'productos' : t === 'ingreso' ? 'ingresos' : t === 'egreso' ? 'egresos' : null; if (!key) return;
@@ -646,6 +734,7 @@ document.addEventListener('change', function (e) {
     if (ce && ce.value === '' && num(v) > 0) ce.value = Math.max(0, Math.round(num(v) - num(S.config.fondo)));
     return;
   }
+  if (f.indexOf('h_') === 0) { setHora(e.target.dataset.w, f, v); return; }
   if (f === 'fecha') { fechaVista = v || hoy(); render(); return; }
   if (f === 'ingresos' || f === 'ventas' || f === 'consumo') { setQty(f, e.target.dataset.cod, v); return; }
   var d = ensureDay(fechaVista); if (d.cerrado) return;
