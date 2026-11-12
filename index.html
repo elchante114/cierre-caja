@@ -41,6 +41,8 @@ nav button span{display:block;font-size:20px}
 #toast{position:fixed;left:16px;right:16px;bottom:96px;background:#222;color:#fff;padding:12px;border-radius:10px;display:none;z-index:9;text-align:center}
 label{display:block;font-size:13px;color:var(--mut);margin:8px 0 2px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 10px}
+.chip{padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--soft);color:var(--ink);font-size:16px}
 </style>
 </head>
 <body>
@@ -106,9 +108,10 @@ function toast(m) { var t = document.getElementById('toast'); t.textContent = m;
 function byCod(list, cod) { for (var i = 0; i < list.length; i++) if (list[i].codigo === cod) return list[i]; return null; }
 function fechaBonita(f) { var a = f.split('-'); return a[2] + '/' + a[1] + '/' + a[0]; }
 
-function emptyDay(f) { return { fecha: f, numero: null, cajero: S.ultimoCajero || '', cerrado: false, ingresos: {}, ventas: {}, consumo: {}, egresos: {}, extras: [], snap: null }; }
+function emptyDay(f) { return { fecha: f, numero: null, cajero: S.ultimoCajero || '', cerrado: false, ingresos: {}, ventas: {}, consumo: {}, egresos: {}, extras: [], sinpe: [], efectivo_contado: '', snap: null }; }
 function getDay(f) { return S.dias[f] || emptyDay(f); }
-function ensureDay(f) { if (!S.dias[f]) S.dias[f] = emptyDay(f); if (!S.dias[f].extras) S.dias[f].extras = []; return S.dias[f]; }
+function ensureDay(f) { if (!S.dias[f]) S.dias[f] = emptyDay(f); if (!S.dias[f].extras) S.dias[f].extras = []; if (!S.dias[f].sinpe) S.dias[f].sinpe = []; return S.dias[f]; }
+var CHIPS = [500, 1000, 1500, 2000, 5000, 10000, 20000, 40000];
 
 function prices(d) {
   if (d.cerrado && d.snap) return d.snap;
@@ -126,6 +129,9 @@ function totals(d) {
   (d.extras || []).forEach(function (x) { var m = x.cantidad * x.precio; if (x.tipo === 'ingreso') t.ing += m; else t.ven += m; });
   t.totalIng = t.ing + t.ven;
   t.general = t.totalIng - t.egr;
+  t.sinpe = 0; (d.sinpe || []).forEach(function (s) { t.sinpe += s.monto; });
+  t.nSinpe = (d.sinpe || []).length;
+  t.efectivo = t.general - t.sinpe;
   return t;
 }
 function stock(cod) {
@@ -176,7 +182,7 @@ function vHoy() {
   S.catalogo.productos.filter(function (i) { return i.activo != 0 || d.consumo[i.codigo]; }).forEach(function (i) {
     h += '<div class="row"><div class="n"><b>' + esc(i.nombre) + '</b></div>' + stepper('consumo', i.codigo, d.consumo[i.codigo] || 0, lock) + '</div>';
   });
-  h += '</div><div class="card"><h2>Egresos</h2>';
+  h += '</div>' + sinpeHtml(d, lock) + '<div class="card"><h2>Egresos</h2>';
   S.catalogo.egresos.filter(function (i) { return i.activo != 0 || d.egresos[i.codigo]; }).forEach(function (i) {
     h += '<div class="row"><div class="n"><b>' + esc(i.nombre) + '</b></div><div style="width:140px"><input type="number" inputmode="decimal" min="0" placeholder="₡" data-f="egresos" data-cod="' + esc(i.codigo) + '" value="' + (d.egresos[i.codigo] === undefined ? '' : d.egresos[i.codigo]) + '"' + (lock ? ' disabled' : '') + '></div></div>';
   });
@@ -185,9 +191,40 @@ function vHoy() {
     '<div class="tot"><span>Ventas</span><span>' + fmt(t.ven) + '</span></div>' +
     '<div class="tot"><b>Total ingresos</b><b>' + fmt(t.totalIng) + '</b></div>' +
     '<div class="tot"><span>Total egresos</span><span>' + fmt(t.egr) + '</span></div>' +
-    '<div class="tot big"><span>Total general</span><span>' + fmt(t.general) + '</span></div></div>';
+    '<div class="tot big"><span>Total general</span><span>' + fmt(t.general) + '</span></div>' +
+    '<div class="tot"><span>Pagado por SINPE (' + t.nSinpe + ')</span><span>' + fmt(t.sinpe) + '</span></div>' +
+    '<div class="tot"><b>Efectivo esperado</b><b>' + fmt(t.efectivo) + '</b></div>' +
+    (t.sinpe > t.totalIng ? '<p class="warn">⚠ Los SINPE superan los ingresos del día: revisá.</p>' : '') +
+    '<label>Efectivo contado (lo vendido hoy, sin la caja chica)</label><input type="number" inputmode="decimal" data-f="efectivo_contado" value="' + esc(d.efectivo_contado) + '"' + (lock ? ' disabled' : '') + '>' +
+    (d.efectivo_contado !== undefined && d.efectivo_contado !== '' ? (function () { var df = num(d.efectivo_contado) - t.efectivo; return df === 0 ? '<p class="ok"><b>Cuadra ✔</b></p>' : '<p class="' + (df > 0 ? 'ok' : 'warn') + '"><b>' + (df > 0 ? 'Sobra ' : 'Falta ') + fmt(Math.abs(df)) + '</b></p>'; })() : '') +
+    '</div>';
   h += lock ? '<button class="btn sec" data-act="reabrir">Reabrir día (Admin)</button>' : '<button class="btn" data-act="cerrar">Cerrar día</button>';
   return h;
+}
+function sinpeHtml(d, lock) {
+  var h = '<div class="card"><h2>Pagos por SINPE</h2>', list = d.sinpe || [], tot = 0;
+  list.forEach(function (s, i) {
+    tot += s.monto;
+    h += '<div class="row"><div class="n"><b>' + fmt(s.monto) + '</b><small>' + esc(s.hora) + (s.nota ? ' · ' + esc(s.nota) : '') + '</small></div>' +
+      (lock ? '' : '<button class="btn sec" style="width:auto;margin:0;padding:8px 12px" data-act="sinpe-del" data-i="' + i + '">Quitar</button>') + '</div>';
+  });
+  if (!list.length) h += '<p class="mut">Todavía no hay pagos por SINPE.</p>';
+  h += '<div class="tot"><b>' + list.length + ' pagos</b><b>' + fmt(tot) + '</b></div>';
+  if (!lock) {
+    h += '<label>Cuando entre un SINPE (confirmalo en la notificación de tu banco), tocá el monto:</label><div class="chips">' +
+      CHIPS.map(function (m) { return '<button class="chip" data-act="sinpe-chip" data-m="' + m + '">' + fmt(m) + '</button>'; }).join('') + '</div>' +
+      '<div class="grid2"><div><label>Otro monto (₡)</label><input type="number" inputmode="numeric" id="s_m" min="1"></div>' +
+      '<div><label>Nota (opcional)</label><input type="text" id="s_n" placeholder="ej. membresía"></div></div>' +
+      '<button class="btn" data-act="sinpe-add">Agregar SINPE</button>';
+  }
+  return h + '</div>';
+}
+function addSinpe(m, nota) {
+  var d = ensureDay(fechaVista); if (d.cerrado) return;
+  m = Math.round(num(m)); if (m <= 0) { toast('Poné un monto'); return; }
+  var n = new Date();
+  d.sinpe.push({ hora: p2(n.getHours()) + ':' + p2(n.getMinutes()), monto: m, nota: (nota || '').trim() });
+  save(); render(); toast('SINPE ' + fmt(m) + ' agregado');
 }
 var extraForm = null;
 function extrasHtml(tipo, d, lock) {
@@ -243,6 +280,7 @@ function vExport() {
   return '<div class="card"><h2>Exportar CSV</h2><p class="mut">Elegí el rango y mandalo por WhatsApp.</p>' +
     '<div class="grid2"><div><label>Desde</label><input type="date" id="x_d" value="' + desde + '"></div><div><label>Hasta</label><input type="date" id="x_h" value="' + hoy() + '"></div></div>' +
     '<button class="btn" data-act="exp" data-k="cierres">Cierres de caja</button>' +
+    '<button class="btn" data-act="exp" data-k="sinpe">Pagos SINPE (para el banco)</button>' +
     '<button class="btn sec" data-act="exp" data-k="mov">Movimientos de inventario</button>' +
     '<button class="btn sec" data-act="exp" data-k="stock">Existencias actuales</button>' +
     (S.ultimoExport ? '<p class="mut">Último export: ' + esc(S.ultimoExport) + '</p>' : '') + '</div>';
@@ -288,20 +326,37 @@ function sendFile(name, lines) {
 function exportar(k) {
   var d1 = document.getElementById('x_d').value, d2 = document.getElementById('x_h').value, L = [], n;
   if (k === 'cierres') {
-    L.push(csvLine(['fecha', 'numero', 'cajero', 'estado', 'tipo', 'codigo', 'concepto', 'cantidad', 'precio_unit', 'total']));
+    var sinpeIdx = {};
+    L.push(csvLine(['fecha', 'numero', 'cajero', 'estado', 'tipo', 'codigo', 'concepto', 'cantidad', 'precio_unit', 'total', 'hora']));
     Object.keys(S.dias).sort().forEach(function (f) {
       if (f < d1 || f > d2) return;
       var d = S.dias[f], P = prices(d), t = totals(d), est = d.cerrado ? 'cerrado' : 'abierto', b = [f, d.numero || '', d.cajero, est];
       Object.keys(d.ingresos).forEach(function (c) { if (d.ingresos[c]) L.push(csvLine(b.concat(['ingreso', c, P.ingresos[c].nombre, d.ingresos[c], P.ingresos[c].precio, d.ingresos[c] * P.ingresos[c].precio]))); });
       Object.keys(d.ventas).forEach(function (c) { if (d.ventas[c]) L.push(csvLine(b.concat(['venta', c, P.productos[c].nombre, d.ventas[c], P.productos[c].precio, d.ventas[c] * P.productos[c].precio]))); });
       (d.extras || []).forEach(function (x) { L.push(csvLine(b.concat([x.tipo + '_precio_distinto', x.codigo, x.nombre + (x.nota ? ' (' + x.nota + ')' : ''), x.cantidad, x.precio, x.cantidad * x.precio]))); });
+      (d.sinpe || []).forEach(function (s) { sinpeIdx[L.length] = true; L.push(csvLine(b.concat(['sinpe', 'SINPE', s.nota || '', 1, s.monto, s.monto, s.hora]))); });
       Object.keys(d.consumo).forEach(function (c) { if (d.consumo[c]) L.push(csvLine(b.concat(['consumo_interno', c, (P.productos[c] || {}).nombre || c, d.consumo[c], 0, 0]))); });
       Object.keys(d.egresos).forEach(function (c) { if (num(d.egresos[c])) { var e = byCod(S.catalogo.egresos, c); L.push(csvLine(b.concat(['egreso', c, e ? e.nombre : c, 1, num(d.egresos[c]), num(d.egresos[c])]))); } });
       L.push(csvLine(b.concat(['resumen', 'TOTAL_INGRESOS', 'Total ingresos', '', '', t.totalIng])));
       L.push(csvLine(b.concat(['resumen', 'TOTAL_EGRESOS', 'Total egresos', '', '', t.egr])));
       L.push(csvLine(b.concat(['resumen', 'TOTAL_GENERAL', 'Total general', '', '', t.general])));
+      L.push(csvLine(b.concat(['resumen', 'SINPE_TOTAL', 'Total por SINPE', t.nSinpe, '', t.sinpe])));
+      L.push(csvLine(b.concat(['resumen', 'EFECTIVO_ESPERADO', 'Efectivo esperado', '', '', t.efectivo])));
+      if (d.efectivo_contado !== undefined && d.efectivo_contado !== '') {
+        L.push(csvLine(b.concat(['resumen', 'EFECTIVO_CONTADO', 'Efectivo contado', '', '', num(d.efectivo_contado)])));
+        L.push(csvLine(b.concat(['resumen', 'DIFERENCIA', 'Diferencia (contado - esperado)', '', '', num(d.efectivo_contado) - t.efectivo])));
+      }
     });
+    L = L.map(function (l, i) { return (i === 0 || sinpeIdx[i]) ? l : l + ','; });
     n = 'cierres_' + d1 + '_a_' + d2 + '.csv';
+  } else if (k === 'sinpe') {
+    L.push(csvLine(['fecha', 'hora', 'monto', 'nota', 'cajero', 'dia_cerrado']));
+    Object.keys(S.dias).sort().forEach(function (f) {
+      if (f < d1 || f > d2) return;
+      var d = S.dias[f];
+      (d.sinpe || []).forEach(function (s) { L.push(csvLine([f, s.hora, s.monto, s.nota || '', d.cajero, d.cerrado ? 'si' : 'no'])); });
+    });
+    n = 'sinpe_' + d1 + '_a_' + d2 + '.csv';
   } else if (k === 'mov') {
     L.push(csvLine(['fecha', 'codigo', 'producto', 'tipo', 'unidades', 'detalle']));
     var M = [];
@@ -376,6 +431,9 @@ document.addEventListener('click', function (e) {
     extraForm = null; save(); render(); toast('Agregado a precio distinto');
   }
   else if (a === 'extra-del') { var dy = ensureDay(fechaVista); if (!dy.cerrado) { dy.extras.splice(parseInt(b.dataset.i, 10), 1); save(); render(); } }
+  else if (a === 'sinpe-chip') { var sn = document.getElementById('s_n'); addSinpe(b.dataset.m, sn ? sn.value : ''); }
+  else if (a === 'sinpe-add') { addSinpe(document.getElementById('s_m').value, document.getElementById('s_n').value); }
+  else if (a === 'sinpe-del') { var dz = ensureDay(fechaVista); if (!dz.cerrado) { dz.sinpe.splice(parseInt(b.dataset.i, 10), 1); save(); render(); } }
   else if (a === 'exp') exportar(b.dataset.k);
   else if (a === 'unlock') { if (pedirPin()) render(); }
   else if (a === 'lock') { adminUntil = 0; render(); }
@@ -421,6 +479,7 @@ document.addEventListener('change', function (e) {
   if (f === 'ingresos' || f === 'ventas' || f === 'consumo') { setQty(f, e.target.dataset.cod, v); return; }
   var d = ensureDay(fechaVista); if (d.cerrado) return;
   if (f === 'cajero') { d.cajero = v; S.ultimoCajero = v; }
+  else if (f === 'efectivo_contado') d.efectivo_contado = v;
   else if (f === 'egresos') { if (v === '') delete d.egresos[e.target.dataset.cod]; else d.egresos[e.target.dataset.cod] = num(v); }
   save(); render();
 });
